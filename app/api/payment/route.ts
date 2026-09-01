@@ -202,25 +202,14 @@ export async function POST(request: Request) {
 
     if (paymentVerified) {
       for (const item of cart) {
-        const { data: bike, error: fetchError } = await supabase
-          .from("bikes")
-          .select("amount_stocked")
-          .eq("bike_id", item.bike_id)
-          .single();
-        if (fetchError) {
-          console.error("Error fetching bike stock:", fetchError);
-          return NextResponse.json(
-            { error: "Failed to fetch bike stock" },
-            { status: 500 }
-          );
-        }
-        const newStock = (bike?.amount_stocked || 0) - item.quantity;
-        const { error: updateError } = await supabase
-          .from("bikes")
-          .update({ amount_stocked: newStock })
-          .eq("bike_id", item.bike_id);
-        if (updateError) {
-          console.error("Error updating inventory:", updateError);
+        // bikes is admin-write-only under RLS, so shoppers decrement stock
+        // through this definer function rather than updating the table.
+        const { error: stockError } = await supabase.rpc("decrement_bike_stock", {
+          p_bike_id: item.bike_id,
+          p_quantity: item.quantity,
+        });
+        if (stockError) {
+          console.error("Error updating inventory:", stockError);
           return NextResponse.json(
             { error: "Failed to update inventory" },
             { status: 500 }
