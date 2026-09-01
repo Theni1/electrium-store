@@ -133,3 +133,29 @@ $$;
 -- so REVOKE ... FROM PUBLIC does not remove it. Revoke by role.
 REVOKE EXECUTE ON FUNCTION public.decrement_bike_stock(integer, integer) FROM anon, PUBLIC;
 GRANT EXECUTE ON FUNCTION public.decrement_bike_stock(integer, integer) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 6. Product image storage
+-- ---------------------------------------------------------------------------
+-- Public bucket: the storefront shows these images to anonymous visitors, so
+-- reads are open. Writes reuse the same is_admin() gate as the bikes table.
+-- bikes.image holds the public URL of an object in this bucket.
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('product-images', 'product-images', true)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Public can view product images" ON storage.objects;
+CREATE POLICY "Public can view product images" ON storage.objects
+  FOR SELECT USING (bucket_id = 'product-images');
+
+DROP POLICY IF EXISTS "Admins can upload product images" ON storage.objects;
+CREATE POLICY "Admins can upload product images" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'product-images' AND public.is_admin());
+
+DROP POLICY IF EXISTS "Admins can update product images" ON storage.objects;
+CREATE POLICY "Admins can update product images" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'product-images' AND public.is_admin());
+
+DROP POLICY IF EXISTS "Admins can delete product images" ON storage.objects;
+CREATE POLICY "Admins can delete product images" ON storage.objects
+  FOR DELETE USING (bucket_id = 'product-images' AND public.is_admin());
