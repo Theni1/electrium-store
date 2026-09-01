@@ -1,0 +1,264 @@
+"use client";
+import React, { useState, useEffect } from "react";
+import Navbar from "@/components/shop/Navbar";
+import Footer from "@/components/shop/Footer";
+import ShippingForm from "@/app/checkout/shippingForm";
+import { PaymentOptions } from "@/app/checkout/paymentOptions";
+import Cart from "./cart";
+import { createClient } from "@/utils/supabase/client";
+import { redirect } from "next/navigation";
+import { getCart } from "@/app/action/cart";
+import { CheckoutBike } from "@/utils/getBike";
+
+export default function CheckoutPage() {
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [cart, setCart] = useState<CheckoutBike[]>([]);
+  const [isCartLoading, setIsCartLoading] = useState(true);
+  const [donation, setDonation] = useState(0);
+  const [customDonation, setCustomDonation] = useState(false);
+
+  useEffect(() => {
+    getCart().then((items) => {
+      setCart(items);
+      setIsCartLoading(false);
+    });
+  }, []);
+
+  const subtotal = cart.reduce(
+    (acc: number, cur: CheckoutBike) =>
+      acc +
+      (cur.orderType === "rent"
+        ? cur.rental_rate * cur.quantity
+        : cur.sell_price * cur.quantity),
+    0
+  );
+  const shipping = 10; // Fixed shipping cost for now
+  const total = subtotal + shipping + donation;
+
+  const [shippingInfo, setShippingInfo] = useState({
+    email: "" /* ...other fields */,
+  });
+
+  // Fetch user profile data on mount
+  useEffect(() => {
+    async function fetchUserProfile() {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      
+      if (user) {
+        // Fetch user profile from customers table
+        const { data: profile } = await supabase
+          .from("customers")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        
+        if (profile) {
+          setUserProfile({
+            email: user.email,
+            first_name: profile.first_name || "",
+            last_name: profile.last_name || "",
+            phone: profile.phone || "",
+            address: profile.address || "",
+          });
+        } else {
+          // If no profile exists, at least set the email
+          setUserProfile({
+            email: user.email,
+            first_name: "",
+            last_name: "",
+            phone: "",
+            address: "",
+          });
+        }
+      }
+    }
+    
+    fetchUserProfile();
+  }, []);
+
+  const handlePaymentSuccess = async (paymentDetails: any) => {
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      // 1. Create order in database via payment API
+      const orderResponse = await fetch("/api/payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderDetails: {
+            amount: total,
+            id: paymentDetails.id || `pay_${Date.now()}`,
+            method: paymentDetails.method || "unknown",
+            donation: donation,
+          },
+          shippingInfo: shippingInfo,
+        }),
+      });
+
+      if (!orderResponse.ok) {
+        const errorData = await orderResponse.json();
+        throw new Error(errorData.error || "Failed to create order");
+      }
+
+      const orderData = await orderResponse.json();
+      const orderId = orderData.orderId;
+
+      console.log("[Checkout] Order created successfully:", orderId);
+
+      // 2. Send the order confirmation email
+      console.log("[Checkout] Sending order confirmation email...");
+      const emailRes = await fetch("/api/send-order-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: shippingInfo.email,
+          order: {
+            items: cart,
+            total: total,
+            orderId: orderId,
+          },
+        }),
+      });
+
+      if (!emailRes.ok) {
+        console.error("[Checkout] Order confirmation email failed to send.");
+      } else {
+        console.log("[Checkout] Order confirmation email sent!");
+      }
+
+      // 3. Redirect to success page (cart already cleared server-side by /api/payment)
+      window.location.href = `/order-success/${orderId}`;
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred during payment processing"
+      );
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handlePaymentError = (errorMessage: string) => {
+    setError(errorMessage);
+  };
+
+  const handleDonationChange = (amount: number) => {
+    setDonation(amount);
+    setCustomDonation(false);
+  };
+
+  const handleCustomDonationChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const amount = parseFloat(e.target.value);
+    setDonation(isNaN(amount) ? 0 : amount);
+  };
+
+  if (isCartLoading) {
+    return null;
+  }
+
+  if (cart.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-text-primary mb-4">
+            Your cart is empty
+          </h1>
+          <p className="text-text-secondary">
+            Please add items to your cart before proceeding to checkout.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen">
+      <main className="bg-background py-16 px-16">
+        <h1 className="text-4xl font-bold text-status-success-text mb-2 text-center w-full">
+          Checkout
+        </h1>
+        {error && (
+          <div
+            className="bg-status-error-bg border border-status-error-border text-status-error-text px-4 py-3 rounded relative mb-4"
+            role="alert"
+          >
+            <span className="block sm:inline">{error}</span>
+          </div>
+        )}
+        <div className="lg:flex lg:flex-row">
+          <div className="flex-1">
+            <div className="p-8 border border-border bg-surface rounded-lg m-8">
+              <ShippingForm 
+                onChange={setShippingInfo} 
+                userProfile={userProfile}
+              />
+            </div>
+            <div className="p-8 border border-border bg-surface rounded-lg m-8">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-text-primary mb-2">
+                  Add a donation
+                </label>
+                <div className="flex space-x-2">
+                  {[5, 10, 20].map((amount) => (
+                    <button
+                      key={amount}
+                      onClick={() => handleDonationChange(amount)}
+                      className={`px-4 py-2 rounded-md ${
+                        donation === amount && !customDonation
+                          ? "bg-btn-primary text-btn-primary-text"
+                          : "bg-btn-secondary text-btn-secondary-text"
+                      }`}
+                    >
+                      ${amount}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setCustomDonation(true)}
+                    className={`px-4 py-2 rounded-md ${
+                      customDonation
+                        ? "bg-btn-primary text-btn-primary-text"
+                        : "bg-btn-secondary text-btn-secondary-text"
+                    }`}
+                  >
+                    Other
+                  </button>
+                </div>
+                {customDonation && (
+                  <div className="mt-4">
+                    <input
+                      type="number"
+                      id="donation"
+                      name="donation"
+                      className="mt-1 block w-full px-3 py-2 bg-background border border-border rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                      onChange={handleCustomDonationChange}
+                      value={donation || ""}
+                      placeholder="Enter amount in CAD (e.g., 10.00)"
+                    />
+                  </div>
+                )}
+              </div>
+              <PaymentOptions
+                total={total}
+                onPaymentSuccess={handlePaymentSuccess}
+                onPaymentError={handlePaymentError}
+                email={shippingInfo.email}
+              />
+            </div>
+          </div>
+          <div className="flex-1">
+            <Cart donation={donation} total={total} />
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

@@ -1,0 +1,105 @@
+"use client";
+
+import { useState } from "react";
+import { login } from "../action/auth";
+import Link from "next/link";
+import { FaRegEye, FaRegEyeSlash } from "react-icons/fa";
+import { LoadingButton } from "@/components/ui/LoadingSpinner";
+
+export default function LoginPage() {
+  const [displayEmail, setDisplayEmail] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [unsuccessfulLogin, setUnsuccessfulLogin] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
+
+  async function handleSubmit(formData: FormData): Promise<void> {
+    setIsLoading(true);
+    setUnsuccessfulLogin(false);
+
+    try {
+      const success = await login(formData);
+      if (!success) {
+        setUnsuccessfulLogin(true);
+      } else {
+        // Redirect to home page on successful login
+        window.location.href = "/";
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      setUnsuccessfulLogin(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <div className="h-screen w-full flex items-center justify-center bg-background">
+      <form
+        className="bg-surface border border-border p-8 rounded-lg w-full max-w-sm"
+        action={handleSubmit}
+      >
+        <h2 className="text-2xl font-bold mb-6 text-text-primary">Login</h2>
+        {unsuccessfulLogin && (
+          <p className="text-status-error-text mb-3 mt-[-15px]">
+            Invalid email or password
+          </p>
+        )}
+        <label htmlFor="email" className="block text-text-primary mb-2">
+          Email:
+        </label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          value={displayEmail}
+          onChange={(e) => setDisplayEmail(e.target.value)}
+          required
+          className="w-full p-2 mb-4 border border-[hsl(var(--border))] rounded bg-[hsl(var(--surface))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--border-focus))] focus:outline-none"
+        />
+        <div className="flex justify-between items-center">
+          <label htmlFor="password" className="block text-text-primary mb-2">
+            Password:
+          </label>
+          <Link
+            className="text-xs text-text-primary underline"
+            href="/forgot-password"
+          >
+            Forgot Password?
+          </Link>
+        </div>
+        <div className="relative">
+          <input
+            id="password"
+            name="password"
+            type={showPassword ? "text" : "password"}
+            required
+            className="w-full p-2 pr-9 mb-4 border border-[hsl(var(--border))] rounded bg-[hsl(var(--surface))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--border-focus))] focus:outline-none"
+          />
+          <span
+            onClick={togglePasswordVisibility}
+            className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer"
+            style={{ height: "69%" }}
+          >
+            {showPassword ? <FaRegEyeSlash /> : <FaRegEye />}
+          </span>
+        </div>
+        <LoadingButton
+          type="submit"
+          isLoading={isLoading}
+          className="w-full bg-btn-primary font-bold text-btn-primary-text px-4 py-2 mt-4 rounded hover:bg-btn-primary-hover disabled:bg-btn-disabled disabled:cursor-not-allowed"
+        >
+          Login
+        </LoadingButton>
+        <Link href="/signup">
+          <p className="block text-center text-text-link mt-4 hover:text-text-link-hover hover:underline">
+            Create an account?
+          </p>
+        </Link>
+      </form>
+    </div>
+  );
+}
