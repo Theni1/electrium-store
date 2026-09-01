@@ -15,6 +15,7 @@ export default function Navbar() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState<CheckoutBike[]>([]);
   const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
 
@@ -48,6 +49,20 @@ export default function Navbar() {
 
     return () => subscription.unsubscribe();
   }, [mounted]);
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+
+    createClient()
+      .from("customers")
+      .select("is_admin")
+      .eq("id", user.id)
+      .single()
+      .then(({ data }) => setIsAdmin(data?.is_admin ?? false));
+  }, [user]);
 
   useEffect(() => {
     // Initial cart load
@@ -210,6 +225,16 @@ export default function Navbar() {
           {/* Authentication Buttons */}
           {mounted && (
             <>
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  className="text-[hsl(var(--text-primary))] hover:text-[hsl(var(--text-link))] mx-2 text-lg"
+                  title="Admin"
+                >
+                  <i className="fas fa-user-shield text-xl"></i>
+                </Link>
+              )}
+
               {/* Always show dashboard link for testing */}
               <Link
                 href="/dashboard"
